@@ -25,20 +25,6 @@ const BOAT = "boat";
 
 const {OAuth2Client} = require('google-auth-library');
 const client = new OAuth2Client(client_id);
-/*async function verify(idToken, audience) {
-  const ticket = await client.verifyIdToken({
-      idToken,
-      audience,  // Specify the CLIENT_ID of the app that accesses the backend
-      // Or, if multiple clients access the backend:
-      //[CLIENT_ID_1, CLIENT_ID_2, CLIENT_ID_3]
-  });
-  const payload = ticket.getPayload();
-  const userid = payload['sub'];
-  // If request specified a G Suite domain:
-  // const domain = payload['hd'];
-}
-verify().catch(console.error);*/
-
 
 function fromDatastore(item){
     item.id = item[Datastore.KEY].id;
@@ -75,13 +61,34 @@ function post_Boat(name, type, length, ispublic, owner){
 	return datastore.save({"key":key, "data":new_Boat}).then(() => {return key});
 }
 
-function get_Boats(){
+async function get_Boats(owner_id){
 	const q = datastore.createQuery(BOAT);
-	return datastore.runQuery(q).then( (entities) => {
-			output = entities[0].map(fromDatastore);
-			output = output.map(boatSelf);
-			return output;
-		});
+	entities =  await datastore.runQuery(q);
+	output = entities[0].map(fromDatastore);
+	boats = [];
+	output.forEach(function(entry) {
+		if(owner_id){
+			if(entry.owner == owner_id){
+				boats.push(entry);
+			}
+		}else if(entry.public){
+			boats.push(entry);
+		}
+	});
+	return boats;
+}
+
+async function getOwnersBoats(owner_id){
+	const q = datastore.createQuery(BOAT);
+	entities =  await datastore.runQuery(q);
+	output = entities[0].map(fromDatastore);
+	boats = [];
+	output.forEach(function(entry) {
+		if(entry.owner == owner_id){
+			boats.push(entry);
+		}
+	});
+	return boats;
 }
 
 async function get_Boat(key){
@@ -162,14 +169,11 @@ app.post('/boats', async (req, res) => {
 	}
 	idToken = idToken.replace('Bearer ','');
 	userid = null;
-	//console.log(idToken);
 	try{
 	const ticket = await client.verifyIdToken({idToken,client_id});
 	const payload = ticket.getPayload();
 	userid = payload['sub'];
-	//console.log(userid);
 	} catch (error) {
-		//console.error(error);
 		error = {"Error": "token is not valid"}
 		res.status(401).send(error);
 		return;
@@ -186,6 +190,29 @@ app.post('/boats', async (req, res) => {
 	}
 });
 
+app.get('/owners/:owner_id/boats', async (req, res) => {
+	
+	boats = await getOwnersBoats(req.params.owner_id);
+	res.status(200).send(boats)
+});
+
+app.get('/boats', async (req, res) => {
+	idToken = req.header('authorization');
+	userid = null;
+	if(idToken){
+		idToken = idToken.replace('Bearer ','');
+		try{
+			const ticket = await client.verifyIdToken({idToken,client_id});
+			const payload = ticket.getPayload();
+			userid = payload['sub'];
+		} catch (error) {
+		}
+	}
+		
+	boats = await get_Boats(userid);
+	res.status(200).send(boats)
+});
+
 app.delete('/boats/:id', async (req, res) => {
 	idToken = req.header('authorization');
 	if(!idToken){
@@ -195,14 +222,11 @@ app.delete('/boats/:id', async (req, res) => {
 	}
 	idToken = idToken.replace('Bearer ','');
 	userid = null;
-	//console.log(idToken);
 	try{
 	const ticket = await client.verifyIdToken({idToken,client_id});
 	const payload = ticket.getPayload();
 	userid = payload['sub'];
-	//console.log(userid);
 	} catch (error) {
-		//console.error(error);
 		error = {"Error": "token is not valid"}
 		res.status(401).send(error);
 		return;
